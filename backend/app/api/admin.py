@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api", tags=["admin"])
 def _load_groups(db, ids: list[int]) -> list[Group]:
     groups = list(db.scalars(select(Group).where(Group.id.in_(ids)))) if ids else []
     if len(groups) != len(set(ids)):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Grupo inexistente")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Grupo inexistente")
     return groups
 
 
