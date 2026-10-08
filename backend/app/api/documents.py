@@ -1,9 +1,13 @@
-from fastapi import APIRouter, HTTPException, status
+from typing import Annotated
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 
 from app.deps import CurrentUser, DbSession, Manager
 from app.models import Document, DocumentVersion, Group, User
 from app.models.document import DocumentStatus
+from app.providers.embeddings import EmbeddingProvider, get_embedding_provider
 from app.schemas import (
     DocumentCreate,
     DocumentOut,
@@ -12,9 +16,27 @@ from app.schemas import (
     VersionDetail,
     VersionOut,
 )
+from app.services.ingestion.indexer import deactivate_chunks, index_document, sync_chunk_groups
 from app.services.access import can_assign_groups, can_edit_document, document_visibility
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+
+Embedder = Annotated[EmbeddingProvider, Depends(get_embedding_provider)]
+
+
+def _reindex_and_commit(db, doc: Document, embedder: EmbeddingProvider, *, groups_only: bool = False):
+    """Index in the same transaction as the edit, so they succeed or fail together."""
+    try:
+        if groups_only:
+            sync_chunk_groups(db, doc)
+        else:
+            index_document(db, doc, embedder)
+        db.commit()
+    except httpx.HTTPError:
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Serviço de embeddings indisponível; nada foi salvo"
+        ) from None
 
 
 def _doc_out(doc: Document) -> DocumentOut:
@@ -58,7 +80,7 @@ def get_document(doc_id: int, db: DbSession, user: CurrentUser):
 
 
 @router.post("", response_model=DocumentOut, status_code=201)
-def create_document(body: DocumentCreate, db: DbSession, user: Manager):
+def create_document(body: DocumentCreate, db: DbSession, user: Manager, embedder: Embedder):
     if not can_assign_groups(user, set(body.group_ids)):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Você só pode usar grupos dos quais participa")
     doc = Document(
@@ -74,12 +96,13 @@ def create_document(body: DocumentCreate, db: DbSession, user: Manager):
         DocumentVersion(version=1, title=body.title, content_md=body.content_md, created_by=user.id)
     )
     db.add(doc)
-    db.commit()
+    db.flush()
+    _reindex_and_commit(db, doc, embedder)
     return _doc_out(doc)
 
 
 @router.put("/{doc_id}", response_model=DocumentOut)
-def update_document(doc_id: int, body: DocumentUpdate, db: DbSession, user: Manager):
+def update_document(doc_id: int, body: DocumentUpdate, db: DbSession, user: Manager, embedder: Embedder):
     doc = _get_visible(db, user, doc_id)
     if not can_edit_document(user, doc):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Você não pode editar este documento")
@@ -100,7 +123,8 @@ def update_document(doc_id: int, body: DocumentUpdate, db: DbSession, user: Mana
     current = doc.current
     new_title = data.get("title") or current.title
     new_content = data.get("content_md", current.content_md)
-    if new_title != current.title or new_content != current.content_md:
+    content_changed = new_title != current.title or new_content != current.content_md
+    if content_changed:
         doc.current_version = current.version + 1
         doc.title = new_title
         doc.versions.append(
@@ -112,7 +136,10 @@ def update_document(doc_id: int, body: DocumentUpdate, db: DbSession, user: Mana
                 created_by=user.id,
             )
         )
-    db.commit()
+    db.flush()
+    # Content or status changes need a full reindex; permission-only changes just resync groups.
+    needs_reindex = content_changed or "status" in data
+    _reindex_and_commit(db, doc, embedder, groups_only=not needs_reindex)
     return _doc_out(doc)
 
 
@@ -138,4 +165,5 @@ def archive_document(doc_id: int, db: DbSession, user: Manager):
     if not can_edit_document(user, doc):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Você não pode arquivar este documento")
     doc.status = DocumentStatus.archived
+    deactivate_chunks(db, doc.id)
     db.commit()

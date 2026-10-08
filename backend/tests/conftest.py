@@ -7,8 +7,10 @@ from app.config import get_settings
 from app.db import Base, get_db
 from app.main import app
 from app.models import Group, User
+from app.providers.embeddings import get_embedding_provider
 from app.models.user import Role
 from app.security import create_access_token, hash_password
+from tests.fakes import FakeEmbedder
 
 test_engine = create_engine(get_settings().test_database_url)
 TestSession = sessionmaker(bind=test_engine, expire_on_commit=False)
@@ -39,6 +41,7 @@ def db():
 @pytest.fixture
 def client(db):
     app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_embedding_provider] = FakeEmbedder
     yield TestClient(app)
     app.dependency_overrides.clear()
 
