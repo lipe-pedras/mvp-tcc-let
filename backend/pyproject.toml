@@ -16,6 +16,10 @@ dependencies = [
     "pyjwt>=2.15,<2.16",
     "pwdlib[argon2]>=0.3,<0.4",
     "python-multipart>=0.0.20",
+    "httpx>=0.28,<0.29",
+    "torch>=2.14,<2.15",
+    "sentence-transformers>=6.1,<6.2",
+    "docling>=2.135,<2.136",
 ]
 
 [dependency-groups]
@@ -30,3 +34,13 @@ pythonpath = ["."]
 
 [tool.uv]
 package = false
+
+# CPU-only PyTorch: the GPU (4 GB) is reserved for the LLM served by Ollama.
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
