@@ -14,7 +14,7 @@ frontend/dist/
 .env
 *.log
 pgdata/
-eval/results/
+**/eval/results/
 
 # OS / editor
 .DS_Store
