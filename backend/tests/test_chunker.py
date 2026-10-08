@@ -70,3 +70,12 @@ def test_headings_inside_code_fences_are_ignored():
 
 def test_empty_sections_are_skipped():
     assert chunk_markdown("# Só título\n\n## Vazio\n") == []
+
+
+def test_leading_h1_equal_to_title_is_not_repeated():
+    chunk = chunk_markdown("# Política de Férias\n\n## Como solicitar\n\nAbra o chamado.")[0]
+    assert chunk.section_path == "Política de Férias > Como solicitar"
+    assert chunk.path_without_title("Política de Férias") == "Como solicitar"
+    assert chunk.indexed_text("Política de Férias").startswith("Política de Férias > Como solicitar\n")
+    # A different H1 is kept: it carries information.
+    assert chunk.path_without_title("Outro título") == "Política de Férias > Como solicitar"

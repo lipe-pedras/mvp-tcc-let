@@ -23,9 +23,18 @@ class Chunk:
     text: str
     page: int | None = None
 
+    def path_without_title(self, doc_title: str) -> str:
+        """Drop a leading section equal to the document title (the H1 usually repeats it)."""
+        prefix = doc_title.strip().casefold()
+        parts = self.section_path.split(" > ") if self.section_path else []
+        if parts and parts[0].strip().casefold() == prefix:
+            parts = parts[1:]
+        return " > ".join(parts)
+
     def indexed_text(self, doc_title: str) -> str:
         """Text used for embeddings and lexical search: context + content."""
-        head = doc_title if not self.section_path else f"{doc_title} > {self.section_path}"
+        path = self.path_without_title(doc_title)
+        head = doc_title if not path else f"{doc_title} > {path}"
         return f"{head}\n\n{self.text}"
 
 

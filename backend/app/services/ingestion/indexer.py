@@ -32,7 +32,7 @@ def index_document(db: Session, doc: Document, embedder: EmbeddingProvider) -> i
             document_id=doc.id,
             version=version.version,
             position=i,
-            section_path=c.section_path,
+            section_path=c.path_without_title(version.title),
             page=c.page,
             text=c.text,
             indexed_text=t,
