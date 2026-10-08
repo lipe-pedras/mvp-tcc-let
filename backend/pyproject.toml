@@ -1,0 +1,32 @@
+[project]
+name = "kb-backend"
+version = "0.1.0"
+description = "Internal knowledge platform with RAG chat"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.143,<0.144",
+    "uvicorn[standard]>=0.54,<0.55",
+    "sqlalchemy>=2.1,<2.2",
+    "alembic>=1.20,<1.21",
+    "psycopg[binary]>=3.3,<3.4",
+    "pgvector>=0.5,<0.6",
+    "pydantic>=2.14,<2.15",
+    "pydantic-settings>=2.15,<2.16",
+    "email-validator>=2.2",
+    "pyjwt>=2.15,<2.16",
+    "pwdlib[argon2]>=0.3,<0.4",
+    "python-multipart>=0.0.20",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1,<9.2",
+    "httpx>=0.28,<0.29",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.uv]
+package = false
