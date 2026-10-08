@@ -1,0 +1,22 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Env and local data
+.env
+*.log
+pgdata/
+eval/results/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
