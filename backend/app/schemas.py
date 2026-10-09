@@ -100,3 +100,11 @@ class VersionOut(ORM):
 
 class VersionDetail(VersionOut):
     content_md: str
+
+
+class PassageOut(BaseModel):
+    chunk_id: int
+    section_path: str
+    version: int
+    is_current_version: bool
+    text: str

@@ -2,10 +2,10 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.deps import Admin, CurrentUser, DbSession
+from app.deps import Admin, CurrentUser, DbSession, Manager
 from app.models import Group, User
 from app.models.user import Role
-from app.schemas import GroupIn, GroupOut, UserCreate, UserOut, UserUpdate
+from app.schemas import GroupIn, GroupOut, UserBrief, UserCreate, UserOut, UserUpdate
 from app.security import hash_password
 
 router = APIRouter(prefix="/api", tags=["admin"])
@@ -24,6 +24,12 @@ def list_groups(db: DbSession, user: CurrentUser):
     if user.role == Role.admin:
         return db.scalars(select(Group).order_by(Group.name)).all()
     return sorted(user.groups, key=lambda g: g.name)
+
+
+@router.get("/people", response_model=list[UserBrief])
+def list_people(db: DbSession, _: Manager):
+    """Names only, so managers can pick a document's topic owner."""
+    return db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.name)).all()
 
 
 @router.post("/groups", response_model=GroupOut, status_code=201)
