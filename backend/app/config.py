@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     retrieval_candidates: int = 30  # per search (dense and lexical) before fusion
     rerank_top_n: int = 15  # candidates passed to the cross-encoder
     gap_min_occurrences: int = 3  # K: a cluster of gaps is shown to managers only with >= K occurrences
-    gap_similarity: float = 0.78  # cosine similarity to join an existing cluster of similar questions
+    gap_similarity: float = 0.60  # cosine similarity to join an existing cluster of similar questions
 
 
 @lru_cache
