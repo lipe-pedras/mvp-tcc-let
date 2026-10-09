@@ -20,9 +20,9 @@ class LLMProvider(Protocol):
 
 
 class OllamaProvider:
-    def __init__(self):
+    def __init__(self, model: str | None = None):
         s = get_settings()
-        self.base_url, self.model = s.ollama_url.rstrip("/"), s.llm_model
+        self.base_url, self.model = s.ollama_url.rstrip("/"), model or s.llm_model
         self.temperature, self.num_ctx, self.timeout = s.llm_temperature, s.llm_num_ctx, s.llm_timeout
 
     def stream(self, messages: list[Message]) -> Iterator[str]:
@@ -46,9 +46,9 @@ class OllamaProvider:
 class OpenAICompatProvider:
     """Any endpoint implementing POST {base_url}/chat/completions (OpenAI, vLLM, LM Studio...)."""
 
-    def __init__(self):
+    def __init__(self, model: str | None = None):
         s = get_settings()
-        self.base_url, self.model = s.openai_base_url.rstrip("/"), s.llm_model
+        self.base_url, self.model = s.openai_base_url.rstrip("/"), model or s.llm_model
         self.api_key, self.temperature, self.timeout = s.openai_api_key, s.llm_temperature, s.llm_timeout
 
     def stream(self, messages: list[Message]) -> Iterator[str]:
@@ -70,10 +70,17 @@ class OpenAICompatProvider:
                     yield piece
 
 
-def get_llm_provider() -> LLMProvider:
-    name = get_settings().llm_provider
+def get_llm_provider(name: str | None = None, model: str | None = None) -> LLMProvider:
+    """The configured provider; `name`/`model` override it (used for the evaluation judge)."""
+    name = name or get_settings().llm_provider
     if name == "ollama":
-        return OllamaProvider()
+        return OllamaProvider(model)
     if name == "openai":
-        return OpenAICompatProvider()
-    raise ValueError(f"LLM_PROVIDER desconhecido: {name!r} (use 'ollama' ou 'openai')")
+        return OpenAICompatProvider(model)
+    raise ValueError(f"Provedor de LLM desconhecido: {name!r} (use 'ollama' ou 'openai')")
+
+
+def get_judge_provider() -> LLMProvider:
+    """Evaluation judge: local Ollama by default; JUDGE_PROVIDER / JUDGE_MODEL to change it."""
+    s = get_settings()
+    return get_llm_provider(s.judge_provider, s.judge_model or None)

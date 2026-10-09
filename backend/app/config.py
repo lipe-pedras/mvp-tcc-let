@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.1
     llm_num_ctx: int = 4096
     llm_timeout: float = 300
+    # Evaluation judge (eval harness only). Local by default; empty model = same as LLM_MODEL.
+    judge_provider: str = "ollama"
+    judge_model: str = ""
     # Used only when LLM_PROVIDER=openai (any OpenAI-compatible endpoint). Off by default.
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: str = ""

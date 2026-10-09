@@ -11,10 +11,8 @@ Modes:
 """
 
 import argparse
-import csv
 import statistics
 import time
-from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -23,16 +21,17 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Chunk, Document, Group
 from app.providers.embeddings import get_embedding_provider
-from app.providers.llm import get_llm_provider
+from app.providers.llm import get_judge_provider, get_llm_provider
 from app.services.chat.pipeline import chat
 from app.services.chat.prompts import NO_CONTEXT_SYSTEM_PROMPT
 from app.services.retrieval.reranker import get_reranker
 from app.services.retrieval.search import retrieve
 from eval.dataset import Question, load_questions
+from eval.judge import judge_config_lines, judge_rows, summarize_judged
 from eval.metrics import RetrievedChunk, leaked_chunks, mean, recall_at_k, reciprocal_rank
+from eval.report import write_outputs
 
 KS = (1, 3, 5)
-RESULTS_DIR = Path(__file__).parent / "results"
 SHOULD_REFUSE = {"sem_resposta", "vazamento"}  # question types for which refusing is correct
 
 
@@ -157,6 +156,9 @@ def run_rag(questions: list[Question]) -> tuple[list[dict], dict]:
                         )
                         if q.evidencias and result.status == "answered" else None
                     ),
+                    "trechos_citados": "\n\n".join(
+                        f"[{src.n}] {src.title} > {src.section_path}: {db.get(Chunk, src.chunk_id).text}" for src in result.sources
+                    ),
                     "fontes": "; ".join(f"[{s.n}] {s.title} > {s.section_path} (v{s.version})" for s in result.sources),
                     "avisos": " ".join(result.warnings),
                     "responsavel_sugerido": result.responsible.name if result.responsible else "",
@@ -177,7 +179,7 @@ def run_rag(questions: list[Question]) -> tuple[list[dict], dict]:
         "aviso_revisao_em_desatualizado": _rate([{"w": bool(r["avisos"])} for r in stale], "w"),
         "ttft_ms_mediana": statistics.median(ttfts) if ttfts else None,
         "tempo_total_ms_mediana": statistics.median(r["total_ms"] for r in rows) if rows else None,
-        "alucinacao_e_acerto": "n/d (requer o juiz LLM: ver README)",
+        "juiz": "não executado (use --judge)",
     }
     return rows, summary
 
@@ -212,69 +214,29 @@ def run_sem_recuperacao(questions: list[Question]) -> tuple[list[dict], dict]:
         "n_perguntas": len(rows),
         "ttft_ms_mediana": statistics.median(ttfts) if ttfts else None,
         "tempo_total_ms_mediana": statistics.median(r["total_ms"] for r in rows) if rows else None,
-        "contaminacao": "n/d (requer o juiz LLM ou anotação humana: comparar `resposta` e `resposta_esperada`)",
+        "juiz": "não executado (use --judge)",
     }
 
 
 MODES = {"so_busca": run_so_busca, "rag": run_rag, "sem_recuperacao": run_sem_recuperacao}
-TABLE_COLUMNS = {
-    "so_busca": ["rr", "top_score", "vazamentos", "recusaria"],
-    "rag": ["rr", "recusou", "motivo_recusa", "citou_evidencia", "vazamentos", "ttft_ms", "total_ms"],
-    "sem_recuperacao": ["ttft_ms", "total_ms"],
-}
-
-
-def fmt(v) -> str:
-    return "n/d" if v is None else (f"{v:.3f}" if isinstance(v, float) else str(v))
-
-
-def write_outputs(rows: list[dict], summary: dict, mode: str, questions_path: Path) -> tuple[Path, Path]:
-    s = get_settings()
-    RESULTS_DIR.mkdir(exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    csv_path, md_path = RESULTS_DIR / f"{stamp}-{mode}.csv", RESULTS_DIR / f"{stamp}-{mode}.md"
-
-    with csv_path.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0]) + ["anotacao_humana"])
-        w.writeheader()
-        w.writerows(rows)
-
-    cols = TABLE_COLUMNS[mode]
-    lines = [
-        f"# Avaliação — modo `{mode}`",
-        "",
-        f"- Data: {datetime.now():%Y-%m-%d %H:%M}",
-        f"- Perguntas: `{questions_path}` ({len(rows)})",
-        f"- Provedor/modelo LLM: `{s.llm_provider}` / `{s.llm_model}` (temperatura {s.llm_temperature}, contexto {s.llm_num_ctx})",
-        f"- Embeddings: `{s.embedding_model}` | Reranker: `{s.reranker_model}`",
-        f"- Limiar de recusa: {s.refusal_threshold} | top-k: {s.top_k} | candidatos: {s.retrieval_candidates} | rerank top-n: {s.rerank_top_n}",
-        "",
-        "## Métricas",
-        "",
-        "| Métrica | Valor |",
-        "|---|---|",
-        *[f"| {k} | {fmt(v)} |" for k, v in summary.items()],
-        "",
-        "> `taxa_vazamento` deve ser **0**.",
-        "",
-        "## Por pergunta",
-        "",
-        "| id | tipo | " + " | ".join(cols) + " |",
-        "|---|---|" + "---|" * len(cols),
-        *[f"| {r['id']} | {r['tipo']} | " + " | ".join(fmt(r[c]) for c in cols) + " |" for r in rows],
-    ]
-    md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return csv_path, md_path
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(prog="eval.run")
     ap.add_argument("--questions", type=Path, required=True)
     ap.add_argument("--mode", choices=sorted(MODES), required=True)
+    ap.add_argument("--judge", action="store_true", help="também julga acerto e fidelidade com o LLM juiz (modos rag e sem_recuperacao)")
     args = ap.parse_args()
 
     rows, summary = MODES[args.mode](load_questions(args.questions))
-    csv_path, md_path = write_outputs(rows, summary, args.mode, args.questions)
+    extra = None
+    if args.judge:
+        if args.mode == "so_busca":
+            raise SystemExit("--judge não se aplica ao modo so_busca (não há resposta gerada).")
+        judge_rows(rows, args.mode, get_judge_provider())
+        summary = {k: v for k, v in summary.items() if k != "juiz"} | summarize_judged(rows, args.mode)
+        extra = judge_config_lines()
+    csv_path, md_path = write_outputs(rows, summary, args.mode, args.questions, extra_config=extra)
     print(md_path.read_text(encoding="utf-8").split("## Por pergunta")[0])
     print(f"CSV: {csv_path}\nResumo: {md_path}")
     if summary.get("vazamentos_total"):
