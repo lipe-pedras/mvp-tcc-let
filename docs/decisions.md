@@ -53,3 +53,16 @@ Registro das decisões não cobertas (ou interpretadas) a partir do enunciado do
 - **O harness usa `record=False`**: perguntas de avaliação não poluem lacunas nem estatísticas.
 - **Modelo padrão: `qwen3.5:4b`.** Comparado com `gemma4:e4b` no conjunto de exemplo (13 perguntas) houve empate em tudo (recusas corretas, citações, zero vazamento); o Gemma foi um pouco mais rápido (4,9 s vs 6,1 s no total mediano), mas ocupa 6,6 GB e não cabe nos 4 GB de VRAM. Reavaliar com o conjunto real de 30–50 perguntas e o juiz LLM.
 - **Contaminação (`sem_recuperacao`):** no exemplo, nenhuma resposta do modelo sem trechos acertou um fato do corpus; ele inventou valores com confiança (ex.: "200 milicores" de CPU). Isso confirma que os fatos fictícios não estão no conhecimento prévio, e que sem recuperação o modelo alucina.
+
+## Fase 4
+
+- **Endpoints novos para o painel** (`/api/manager/*`): lacunas, estatísticas e revisões vencidas. Nenhuma resposta tem id de usuário, e-mail ou conversa (teste automatizado percorre as respostas procurando esses campos).
+- **K-anonimato no painel:** clusters com menos de K ocorrências não são devolvidos nem descritos; só entram em `hidden_gaps` (contagem). K = `GAP_MIN_OCCURRENCES` (padrão 3).
+- **Limite de similaridade das lacunas = 0,60** (`GAP_SIMILARITY`), calibrado com embeddings reais do `bge-m3`: perguntas do mesmo tema ficaram entre 0,65 e 0,90 de similaridade e as de temas diferentes abaixo de 0,55 (amostra pequena; recalibrar com dados reais). Agrupamento guloso por centroide.
+- **Botão “isso não respondeu” só em respostas dadas.** Em recusas a lacuna já é registrada automaticamente; um segundo registro duplicaria a contagem.
+- **Citações abrem em nova aba**, para não perder a conversa (que só existe em memória no navegador e nunca é salva).
+- **Passagem citada por id de trecho** (`GET /documents/{id}/passages/{chunk_id}`): a citação continua apontando para o texto que foi de fato lido, mesmo que o documento tenha sido atualizado depois. Segue a mesma regra de visibilidade do documento (404 sem permissão).
+- **Token JWT em `localStorage`.** Simples para o MVP; o React escapa o conteúdo e o Markdown não renderiza HTML cru, mas um XSS roubaria o token. Para produção, preferir cookie `HttpOnly`.
+- **Editor envia só o que mudou** (diff no cliente), para não gerar versão nem reindexação sem necessidade.
+- **Lista de pessoas para “responsável pelo tema”** (`/api/people`) devolve apenas id e nome, para gestores.
+- **Sem framework de UI** (CSS próprio, claro/escuro automático) e sem biblioteca de gráficos: o gráfico diário é feito com barras em CSS.
