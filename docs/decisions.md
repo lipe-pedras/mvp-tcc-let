@@ -36,3 +36,20 @@ Registro das decisões não cobertas (ou interpretadas) a partir do enunciado do
 - **Pacote `eval/` dentro de `backend/`**, para importar `app` sem configuração extra. Perguntas e resultados em `backend/eval/`. Resultados (`eval/results/`) não são versionados.
 - **Perfil das perguntas de avaliação = lista de grupos** (`"perfil": {"grupos": [...]}`), não usuário. O vazamento é checado contra os grupos do *chunk* e os grupos atuais do *documento*.
 - **Corpus de exemplo:** empresa fictícia "Alvorada Logística". O documento de deploy é restrito ao grupo `engenharia` e as faixas salariais ao `financeiro` (dois cenários de vazamento). A contradição proposital: prazo de reembolso de 15 dias corridos (Reembolso de Despesas) × 10 dias corridos (Guia de Viagens). Revisão vencida: Política de Senhas (30/06/2025).
+
+## Fase 3
+
+- **Nenhuma conversa é armazenada.** O servidor guarda apenas: lacunas (texto da pergunta, embedding, dia, origem), feedback (sem usuário) e contadores diários (respondidas/recusadas). As tabelas `gaps`, `feedback` e `usage_daily` não têm referência a usuário (há teste automatizado para isso). O cliente reenvia pergunta e resposta ao dar feedback.
+- **"Grupo" no painel do gestor = agrupamento de perguntas parecidas** (clusters por embedding), não grupo de acesso. Assim a lacuna não precisa registrar quem perguntou. Interpretação do enunciado.
+- **Comentários de feedback são gravados mas não aparecem no painel** (texto livre pode identificar a pessoa). Só contagens agregadas.
+- **Trechos enviados ao LLM:** os `top_k` melhores com nota do reranker ≥ limiar. Trechos abaixo do limiar não vão para o prompt, mesmo que sobrem vagas.
+- **Recusa:** (a) nota do melhor trecho < limiar → LLM nunca é chamado; (b) LLM responde `SEM_EVIDENCIA`; (c) resposta sem nenhuma citação válida. Em todos os casos o texto devolvido é o da recusa, nunca o texto não citado do modelo. Os três casos registram uma lacuna.
+- **Citações inválidas** (`[9]` com 5 trechos) são removidas do texto; se sobrar alguma válida, a resposta vale.
+- **Responsável sugerido na recusa** = responsável do documento do melhor trecho recuperado (sempre um documento que o usuário pode ver), exibido junto ao nome do documento para que a pessoa julgue a relevância. Observação: com nota baixa o documento pode ser irrelevante (nas perguntas de teste, a sugestão apontou para documentos sem relação). Avaliar se vale exigir uma nota mínima.
+- **Avisos de revisão vencida** só aparecem para documentos efetivamente citados na resposta.
+- **Streaming com buffer + eventos de etapa** (`retrieving`, `generating`, `validating`, depois `result`) via SSE em `POST /api/chat`. Indisponibilidade do Ollama gera um evento `error`.
+- **Ollama com `think: false`.** Modelos com modo de raciocínio (Qwen 3.5) ficam mais lentos e podem vazar o raciocínio na resposta.
+- **Provedor OpenAI-compatível implementado com `httpx`** (sem o SDK `openai`), para manter as dependências e a superfície de rede mínimas. Desligado por padrão; só `LLM_PROVIDER=openai` o ativa. Nesse modo, trechos e perguntas saem da máquina.
+- **O harness usa `record=False`**: perguntas de avaliação não poluem lacunas nem estatísticas.
+- **Modelo padrão: `qwen3.5:4b`.** Comparado com `gemma4:e4b` no conjunto de exemplo (13 perguntas) houve empate em tudo (recusas corretas, citações, zero vazamento); o Gemma foi um pouco mais rápido (4,9 s vs 6,1 s no total mediano), mas ocupa 6,6 GB e não cabe nos 4 GB de VRAM. Reavaliar com o conjunto real de 30–50 perguntas e o juiz LLM.
+- **Contaminação (`sem_recuperacao`):** no exemplo, nenhuma resposta do modelo sem trechos acertou um fato do corpus; ele inventou valores com confiança (ex.: "200 milicores" de CPU). Isso confirma que os fatos fictícios não estão no conhecimento prévio, e que sem recuperação o modelo alucina.

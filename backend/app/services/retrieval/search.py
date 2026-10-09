@@ -89,9 +89,13 @@ def retrieve(
     *,
     candidates: int,
     rerank_top_n: int,
+    query_vec: list[float] | None = None,
 ) -> list[Hit]:
-    """Return hits ordered by reranker score (best first)."""
-    query_vec = embedder.embed([question])[0]
+    """Return hits ordered by reranker score (best first).
+
+    Pass `query_vec` when the question was already embedded, to avoid doing it twice.
+    """
+    query_vec = query_vec or embedder.embed([question])[0]
     fused = rrf_fuse(
         [
             dense_search(db, query_vec, group_ids, candidates),

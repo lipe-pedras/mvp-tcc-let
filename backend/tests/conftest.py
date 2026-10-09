@@ -8,9 +8,11 @@ from app.db import Base, get_db
 from app.main import app
 from app.models import Group, User
 from app.providers.embeddings import get_embedding_provider
+from app.providers.llm import get_llm_provider
+from app.services.retrieval.reranker import get_reranker
 from app.models.user import Role
 from app.security import create_access_token, hash_password
-from tests.fakes import FakeEmbedder
+from tests.fakes import FakeEmbedder, FakeLLM, FakeReranker
 
 test_engine = create_engine(get_settings().test_database_url)
 TestSession = sessionmaker(bind=test_engine, expire_on_commit=False)
@@ -39,9 +41,16 @@ def db():
 
 
 @pytest.fixture
-def client(db):
+def llm():
+    return FakeLLM()
+
+
+@pytest.fixture
+def client(db, llm):
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[get_embedding_provider] = FakeEmbedder
+    app.dependency_overrides[get_reranker] = FakeReranker
+    app.dependency_overrides[get_llm_provider] = lambda: llm
     yield TestClient(app)
     app.dependency_overrides.clear()
 

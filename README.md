@@ -2,7 +2,7 @@
 
 Tutoriais internos + chat RAG que responde só com base na documentação, sempre citando a fonte e recusando quando não há evidência.
 
-> Status: **Fase 2 concluída** (ingestão, busca híbrida com filtro de permissão, reranker, avaliação `so_busca`). Chat, frontend e juiz LLM vêm nas próximas fases. Ver `docs/decisions.md`.
+> Status: **Fase 3 concluída** (chat RAG com citação, recusa, lacunas e feedback; avaliação `so_busca`, `rag` e `sem_recuperacao`). Frontend e juiz LLM vêm nas próximas fases. Ver `docs/decisions.md`.
 
 ## Requisitos
 
@@ -51,9 +51,18 @@ cd backend
 uv run python -m eval.run --questions eval/questions.example.jsonl --mode so_busca
 ```
 
-Gera, em `backend/eval/results/`, um CSV por pergunta (com coluna `anotacao_humana`) e um resumo em Markdown. A primeira execução baixa o reranker `bge-reranker-v2-m3` (~2 GB). Os modos `rag` e `sem_recuperacao` chegam na Fase 3.
+Modos: `so_busca` (só recuperação), `rag` (sistema completo) e `sem_recuperacao` (LLM sem trechos, mede conhecimento prévio do modelo sobre o corpus). Gera, em `backend/eval/results/`, um CSV por pergunta (com coluna `anotacao_humana`) e um resumo em Markdown. A primeira execução baixa o reranker `bge-reranker-v2-m3` (~2 GB). 
+## Chat (API)
 
-Resultado atual sobre o corpus de exemplo (13 perguntas): Recall@3 = 1,0, MRR = 1,0, vazamentos = 0, recusa correta = 100%, recusa indevida = 0% (limiar 0,3). Conjunto pequeno: serve como teste de fumaça, não como estimativa de qualidade.
+- `POST /api/chat` `{"question": "..."}` → Server-Sent Events: eventos `stage` (`retrieving`, `generating`, `validating`) e um `result` final com `status` (`answered`/`refused`), `answer`, `sources` (documento, seção, versão), `warnings` (revisão vencida) e `responsible` (na recusa). A resposta só é enviada depois de gerada e validada.
+- `POST /api/chat/feedback` `{question, answer, helpful, comment?}` → 204. Sem vínculo com o usuário; avaliação negativa também registra uma lacuna.
+- A busca do chat sempre respeita os grupos do usuário, inclusive para admin.
+
+## Trocar modelos e provedor
+
+Tudo no `.env` (ver `.env.example`): `LLM_PROVIDER` (`ollama` | `openai`), `LLM_MODEL`, `EMBEDDING_MODEL`, `REFUSAL_THRESHOLD`, `TOP_K`. Para outro modelo local: `ollama pull <modelo>` e ajuste `LLM_MODEL`. Com `LLM_PROVIDER=openai` (`OPENAI_BASE_URL`, `OPENAI_API_KEY`) perguntas e trechos **saem da máquina**; fica desligado por padrão. Trocar o modelo de embeddings exige ajustar `EMBEDDING_DIM` (e a coluna) e reindexar.
+
+Resultado sobre o corpus de exemplo (13 perguntas, `qwen3.5:4b`, limiar 0,3), modo `rag`: Recall@3 = 1,0, MRR = 1,0, vazamentos = 0, recusa correta = 100% (sem resposta e vazamento), recusa indevida = 0%, citação da evidência esperada = 100%, aviso de revisão vencida = 100%, tempo total mediano ≈ 6 s. Conjunto pequeno: serve como teste de fumaça, não como estimativa de qualidade.
 
 ## Testes
 
