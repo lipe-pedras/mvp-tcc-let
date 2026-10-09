@@ -1,0 +1,23 @@
+{
+  "groups": ["todos", "rh", "engenharia", "financeiro"],
+  "users": [
+    {"email": "admin@alvorada.example", "name": "Ana Admin", "role": "admin", "groups": ["todos"]},
+    {"email": "gestor.rh@alvorada.example", "name": "Helena Gestora de RH", "role": "gestor", "groups": ["todos", "rh"]},
+    {"email": "gestor.eng@alvorada.example", "name": "Eduardo Gestor de Engenharia", "role": "gestor", "groups": ["todos", "engenharia"]},
+    {"email": "colab.fin@alvorada.example", "name": "Fabiana do Financeiro", "role": "colaborador", "groups": ["todos", "financeiro"]},
+    {"email": "colab.eng@alvorada.example", "name": "Gustavo de Engenharia", "role": "colaborador", "groups": ["todos", "engenharia"]},
+    {"email": "novato@alvorada.example", "name": "Nina Novata", "role": "colaborador", "groups": ["todos"]}
+  ],
+  "documents": [
+    {"file": "ferias.md", "title": "Política de Férias", "groups": ["todos"], "responsible": "gestor.rh@alvorada.example", "review_date": "2027-03-31"},
+    {"file": "reembolso.md", "title": "Reembolso de Despesas", "groups": ["todos"], "responsible": "gestor.rh@alvorada.example", "review_date": "2027-02-28"},
+    {"file": "home_office.md", "title": "Política de Home Office", "groups": ["todos"], "responsible": "gestor.rh@alvorada.example", "review_date": "2027-06-30"},
+    {"file": "guia_viagens.md", "title": "Guia de Viagens a Serviço", "groups": ["todos"], "responsible": "gestor.rh@alvorada.example", "review_date": "2027-01-31"},
+    {"file": "deploy_tucano.md", "title": "Procedimento de Deploy no Ambiente Tucano", "groups": ["engenharia"], "responsible": "gestor.eng@alvorada.example", "review_date": "2027-04-30"},
+    {"file": "glossario.md", "title": "Glossário de Siglas e Sistemas Internos", "groups": ["todos"], "responsible": "admin@alvorada.example", "review_date": "2027-05-31"},
+    {"file": "faixas_salariais.md", "title": "Faixas Salariais por Nível", "groups": ["financeiro"], "responsible": "admin@alvorada.example", "review_date": "2027-03-31"},
+    {"file": "primeiro_dia.md", "title": "Seu Primeiro Dia na Alvorada", "groups": ["todos"], "responsible": "gestor.rh@alvorada.example", "review_date": "2027-07-31"},
+    {"file": "seguranca_senhas.md", "title": "Política de Senhas e Acesso Remoto", "groups": ["todos"], "responsible": "gestor.eng@alvorada.example", "review_date": "2025-06-30"},
+    {"file": "beneficios.md", "title": "Benefícios", "groups": ["todos"], "responsible": "gestor.rh@alvorada.example", "review_date": "2027-08-31"}
+  ]
+}
