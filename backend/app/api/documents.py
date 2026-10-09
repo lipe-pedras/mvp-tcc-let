@@ -1,9 +1,14 @@
-from fastapi import APIRouter, HTTPException, status
+from datetime import date
+from typing import Annotated
+
+import httpx
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 
 from app.deps import CurrentUser, DbSession, Manager
 from app.models import Document, DocumentVersion, Group, User
 from app.models.document import DocumentStatus
+from app.providers.embeddings import EmbeddingProvider, get_embedding_provider
 from app.schemas import (
     DocumentCreate,
     DocumentOut,
@@ -12,9 +17,28 @@ from app.schemas import (
     VersionDetail,
     VersionOut,
 )
+from app.services.ingestion.parsers import DocumentParser, get_parser, parse_upload
+from app.services.ingestion.indexer import deactivate_chunks, index_document, sync_chunk_groups
 from app.services.access import can_assign_groups, can_edit_document, document_visibility
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+
+Embedder = Annotated[EmbeddingProvider, Depends(get_embedding_provider)]
+
+
+def _reindex_and_commit(db, doc: Document, embedder: EmbeddingProvider, *, groups_only: bool = False):
+    """Index in the same transaction as the edit, so they succeed or fail together."""
+    try:
+        if groups_only:
+            sync_chunk_groups(db, doc)
+        else:
+            index_document(db, doc, embedder)
+        db.commit()
+    except httpx.HTTPError:
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Serviço de embeddings indisponível; nada foi salvo"
+        ) from None
 
 
 def _doc_out(doc: Document) -> DocumentOut:
@@ -33,7 +57,7 @@ def _get_visible(db, user, doc_id: int) -> Document:
 def _groups(db, ids: list[int]) -> list[Group]:
     groups = list(db.scalars(select(Group).where(Group.id.in_(ids))))
     if len(groups) != len(set(ids)):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Grupo inexistente")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Grupo inexistente")
     return groups
 
 
@@ -42,7 +66,7 @@ def _responsible(db, responsible_id: int | None) -> User | None:
         return None
     person = db.get(User, responsible_id)
     if not person:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Responsável inexistente")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Responsável inexistente")
     return person
 
 
@@ -57,29 +81,79 @@ def get_document(doc_id: int, db: DbSession, user: CurrentUser):
     return _doc_out(_get_visible(db, user, doc_id))
 
 
-@router.post("", response_model=DocumentOut, status_code=201)
-def create_document(body: DocumentCreate, db: DbSession, user: Manager):
-    if not can_assign_groups(user, set(body.group_ids)):
+def _create(
+    db,
+    user: User,
+    embedder: EmbeddingProvider,
+    *,
+    title: str,
+    content_md: str,
+    group_ids: list[int],
+    responsible_id: int | None,
+    review_date: date | None,
+    doc_status: DocumentStatus,
+    source: str,
+) -> DocumentOut:
+    if not can_assign_groups(user, set(group_ids)):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Você só pode usar grupos dos quais participa")
     doc = Document(
-        title=body.title,
+        title=title,
         author_id=user.id,
-        responsible=_responsible(db, body.responsible_id),
-        review_date=body.review_date,
-        status=body.status,
-        groups=_groups(db, body.group_ids),
+        responsible=_responsible(db, responsible_id),
+        review_date=review_date,
+        status=doc_status,
+        groups=_groups(db, group_ids),
         current_version=1,
     )
     doc.versions.append(
-        DocumentVersion(version=1, title=body.title, content_md=body.content_md, created_by=user.id)
+        DocumentVersion(version=1, title=title, content_md=content_md, source=source, created_by=user.id)
     )
     db.add(doc)
-    db.commit()
+    db.flush()
+    _reindex_and_commit(db, doc, embedder)
     return _doc_out(doc)
 
 
+@router.post("", response_model=DocumentOut, status_code=201)
+def create_document(body: DocumentCreate, db: DbSession, user: Manager, embedder: Embedder):
+    return _create(
+        db, user, embedder,
+        title=body.title, content_md=body.content_md, group_ids=body.group_ids,
+        responsible_id=body.responsible_id, review_date=body.review_date,
+        doc_status=body.status, source="markdown",
+    )
+
+
+@router.post("/import", response_model=DocumentOut, status_code=201)
+def import_document(
+    db: DbSession,
+    user: Manager,
+    embedder: Embedder,
+    parser: Annotated[DocumentParser, Depends(get_parser)],
+    file: Annotated[UploadFile, File()],
+    title: Annotated[str, Form(min_length=1, max_length=255)],
+    group_ids: Annotated[list[int], Form(min_length=1)],
+    responsible_id: Annotated[int | None, Form()] = None,
+    review_date: Annotated[date | None, Form()] = None,
+    doc_status: Annotated[DocumentStatus, Form(alias="status")] = DocumentStatus.draft,
+):
+    """Import PDF/DOCX/PPTX. Imports start as drafts so a manager can proofread the conversion."""
+    try:
+        content_md = parse_upload(parser, file.filename or "", file.file.read())
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from None
+    if not content_md.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Não foi possível extrair texto do arquivo")
+    return _create(
+        db, user, embedder,
+        title=title, content_md=content_md, group_ids=group_ids,
+        responsible_id=responsible_id, review_date=review_date,
+        doc_status=doc_status, source="import",
+    )
+
+
 @router.put("/{doc_id}", response_model=DocumentOut)
-def update_document(doc_id: int, body: DocumentUpdate, db: DbSession, user: Manager):
+def update_document(doc_id: int, body: DocumentUpdate, db: DbSession, user: Manager, embedder: Embedder):
     doc = _get_visible(db, user, doc_id)
     if not can_edit_document(user, doc):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Você não pode editar este documento")
@@ -100,7 +174,8 @@ def update_document(doc_id: int, body: DocumentUpdate, db: DbSession, user: Mana
     current = doc.current
     new_title = data.get("title") or current.title
     new_content = data.get("content_md", current.content_md)
-    if new_title != current.title or new_content != current.content_md:
+    content_changed = new_title != current.title or new_content != current.content_md
+    if content_changed:
         doc.current_version = current.version + 1
         doc.title = new_title
         doc.versions.append(
@@ -112,7 +187,10 @@ def update_document(doc_id: int, body: DocumentUpdate, db: DbSession, user: Mana
                 created_by=user.id,
             )
         )
-    db.commit()
+    db.flush()
+    # Content or status changes need a full reindex; permission-only changes just resync groups.
+    needs_reindex = content_changed or "status" in data
+    _reindex_and_commit(db, doc, embedder, groups_only=not needs_reindex)
     return _doc_out(doc)
 
 
@@ -138,4 +216,5 @@ def archive_document(doc_id: int, db: DbSession, user: Manager):
     if not can_edit_document(user, doc):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Você não pode arquivar este documento")
     doc.status = DocumentStatus.archived
+    deactivate_chunks(db, doc.id)
     db.commit()

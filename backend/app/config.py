@@ -13,6 +13,21 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 480
 
+    # Models
+    llm_provider: str = "ollama"
+    ollama_url: str = "http://localhost:11434"
+    llm_model: str = "qwen3.5:4b"
+    embedding_model: str = "bge-m3"
+    embedding_dim: int = 1024
+    reranker_model: str = "BAAI/bge-reranker-v2-m3"
+
+    # Retrieval and answering
+    refusal_threshold: float = 0.3
+    top_k: int = 5
+    retrieval_candidates: int = 30  # per search (dense and lexical) before fusion
+    rerank_top_n: int = 15  # candidates passed to the cross-encoder
+    gap_min_occurrences: int = 3
+
 
 @lru_cache
 def get_settings() -> Settings:
