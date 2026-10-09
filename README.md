@@ -2,7 +2,7 @@
 
 Tutoriais internos + chat RAG que responde só com base na documentação, sempre citando a fonte e recusando quando não há evidência.
 
-> Status: **Fase 3 concluída** (chat RAG com citação, recusa, lacunas e feedback; avaliação `so_busca`, `rag` e `sem_recuperacao`). Frontend e juiz LLM vêm nas próximas fases. Ver `docs/decisions.md`.
+> Status: **Fase 4 concluída** (frontend de colaborador, gestor e admin). Falta a Fase 5 (juiz LLM, varredura de limiar, documentação final). Ver `docs/decisions.md`.
 
 ## Requisitos
 
@@ -24,6 +24,15 @@ uv run uvicorn app.main:app --reload
 ```
 
 API em http://localhost:8000 (docs interativas em `/docs`).
+
+Frontend (outro terminal):
+
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173 (o Vite encaminha /api para :8000)
+npm run build      # build de produção em frontend/dist
+```
 
 Modelos do Ollama:
 
@@ -52,6 +61,31 @@ uv run python -m eval.run --questions eval/questions.example.jsonl --mode so_bus
 ```
 
 Modos: `so_busca` (só recuperação), `rag` (sistema completo) e `sem_recuperacao` (LLM sem trechos, mede conhecimento prévio do modelo sobre o corpus). Gera, em `backend/eval/results/`, um CSV por pergunta (com coluna `anotacao_humana`) e um resumo em Markdown. A primeira execução baixa o reranker `bge-reranker-v2-m3` (~2 GB). 
+## Fluxo manual completo (com prints)
+
+Com a API, o Vite e o Ollama rodando e o banco populado (`app.cli.seed --reset`). As capturas abaixo foram geradas em navegador real por `docs/walkthrough.mjs` (Playwright; instale `playwright` em um diretório à parte e rode `node walkthrough.mjs <pasta-de-saída>`).
+
+1. **Login** como `novato@alvorada.example` (senha `senha-12345`).
+   ![login](docs/screenshots/01-login.png)
+2. **Ler tutoriais**: só aparecem os documentos dos grupos do usuário (o de faixas salariais e o de deploy não aparecem para o `novato`).
+   ![tutoriais](docs/screenshots/02-tutoriais.png) ![leitura](docs/screenshots/03-leitura-tutorial.png)
+3. **Perguntar** ao assistente. Enquanto a resposta é gerada e validada, aparecem mensagens de progresso (“Coletando informações no banco de dados…”, “Gerando resposta…”, “Validando conteúdo…”, “Verificando a veracidade…”).
+   ![carregando](docs/screenshots/04-carregando.png)
+4. **Resposta citada**, com fontes (documento, seção, versão) e botões de feedback.
+   ![resposta](docs/screenshots/05-resposta-com-fontes.png)
+5. **Clicar na citação** abre, em nova aba, o trecho exato citado e o documento, com a seção destacada (se a versão citada não for mais a atual, a tela avisa).
+   ![citação](docs/screenshots/06-citacao-aberta.png)
+6. **Recusa**: sem evidência suficiente, o assistente não inventa; indica o responsável pelo tema e registra a lacuna de forma anônima. Perguntas sobre documentos sem permissão (ex.: faixas salariais) também são recusadas.
+   ![recusa](docs/screenshots/07-recusa-com-responsavel.png) ![restrito](docs/screenshots/09-restrito-recusa.png)
+7. **“Isso não respondeu”**: registra feedback anônimo (e uma lacuna).
+   ![feedback](docs/screenshots/08-feedback-enviado.png)
+8. **Gestor** (`gestor.rh@alvorada.example`): o **Painel** mostra estatísticas agregadas, a lacuna agrupada (aparece só com ≥ K ocorrências; as perguntas isoladas ficam ocultas e apenas contadas) e os documentos com revisão vencida.
+   ![painel](docs/screenshots/10-painel-gestor.png)
+9. **Gerenciar documentos**: criar, editar, importar (PDF/DOCX/PPTX), definir responsável, data de revisão e grupos; histórico de versões.
+   ![gerenciar](docs/screenshots/11-gerenciar-documentos.png) ![editor](docs/screenshots/12-editor-documento.png)
+10. **Admin** (`admin@alvorada.example`): usuários, papéis e grupos.
+    ![admin](docs/screenshots/13-administracao.png)
+
 ## Chat (API)
 
 - `POST /api/chat` `{"question": "..."}` → Server-Sent Events: eventos `stage` (`retrieving`, `generating`, `validating`) e um `result` final com `status` (`answered`/`refused`), `answer`, `sources` (documento, seção, versão), `warnings` (revisão vencida) e `responsible` (na recusa). A resposta só é enviada depois de gerada e validada.

@@ -6,10 +6,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy import select
 
 from app.deps import CurrentUser, DbSession, Manager
-from app.models import Document, DocumentVersion, Group, User
+from app.models import Chunk, Document, DocumentVersion, Group, User
 from app.models.document import DocumentStatus
 from app.providers.embeddings import EmbeddingProvider, get_embedding_provider
 from app.schemas import (
+    PassageOut,
     DocumentCreate,
     DocumentOut,
     DocumentSummary,
@@ -192,6 +193,23 @@ def update_document(doc_id: int, body: DocumentUpdate, db: DbSession, user: Mana
     needs_reindex = content_changed or "status" in data
     _reindex_and_commit(db, doc, embedder, groups_only=not needs_reindex)
     return _doc_out(doc)
+
+
+@router.get("/{doc_id}/passages/{chunk_id}", response_model=PassageOut)
+def get_passage(doc_id: int, chunk_id: int, db: DbSession, user: CurrentUser):
+    """The text a chat answer cited. Works for chunks of older versions too, so a citation
+    keeps pointing at what was actually read. Access follows the document's current visibility."""
+    doc = _get_visible(db, user, doc_id)
+    chunk = db.scalar(select(Chunk).where(Chunk.id == chunk_id, Chunk.document_id == doc.id))
+    if not chunk:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Trecho não encontrado")
+    return PassageOut(
+        chunk_id=chunk.id,
+        section_path=chunk.section_path,
+        version=chunk.version,
+        is_current_version=chunk.version == doc.current_version,
+        text=chunk.text,
+    )
 
 
 @router.get("/{doc_id}/versions", response_model=list[VersionOut])

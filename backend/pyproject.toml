@@ -17,6 +17,7 @@ dependencies = [
     "pwdlib[argon2]>=0.3,<0.4",
     "python-multipart>=0.0.20",
     "httpx>=0.28,<0.29",
+    "numpy>=2.0",
     "torch>=2.14,<2.15",
     "torchvision>=0.29,<0.30",
     "sentence-transformers>=6.1,<6.2",

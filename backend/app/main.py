@@ -11,7 +11,7 @@ for _var, _val in {
 
 from fastapi import FastAPI  # noqa: E402
 
-from app.api import admin, auth, chat, documents  # noqa: E402
+from app.api import admin, auth, chat, documents, manager  # noqa: E402
 
 app = FastAPI(
     title="Plataforma de conhecimento interno",
@@ -21,6 +21,7 @@ app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(documents.router)
 app.include_router(chat.router)
+app.include_router(manager.router)
 
 
 @app.get("/api/health")
