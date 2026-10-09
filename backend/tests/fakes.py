@@ -44,3 +44,19 @@ class FakeReranker:
     def score(self, question: str, passages: list[str]) -> list[float]:
         q = set(_tokens(question))
         return [len(q & set(_tokens(p))) / (len(q) or 1) for p in passages]
+
+
+class FakeLLM:
+    """Scriptable model: set `.reply`; every call is recorded in `.calls`."""
+
+    model = "fake-llm"
+
+    def __init__(self, reply: str = "Resposta [1]."):
+        self.reply = reply
+        self.calls: list[list[dict]] = []
+
+    def stream(self, messages):
+        self.calls.append(messages)
+        words = self.reply.split(" ")
+        for i, w in enumerate(words):
+            yield w + (" " if i < len(words) - 1 else "")
