@@ -42,8 +42,6 @@ app.include_router(chat.router)
 app.include_router(manager.router)
 
 
-_INSECURE_SECRETS = {"change-me", "change-me-with-a-long-string-of-random-characters", "change-me-with-a-long-random-string"}
-
 
 @app.get("/api/health")
 def health():
