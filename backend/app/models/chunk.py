@@ -7,7 +7,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
 
-EMBEDDING_DIM = 1024  # bge-m3. Changing the model means changing this and reindexing.
+from app.config import get_settings
+
+EMBEDDING_DIM = get_settings().embedding_dim  # EMBEDDING_DIM in .env (1024 for bge-m3); changing it needs a migration
 
 
 class Chunk(Base):

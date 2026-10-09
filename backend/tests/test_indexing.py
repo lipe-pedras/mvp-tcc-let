@@ -79,3 +79,18 @@ def test_embedding_failure_saves_nothing(client, db, gestor, groups):
     r = client.post("/api/documents", json=body, headers=auth(gestor))
     assert r.status_code == 503
     assert client.get("/api/documents", headers=auth(gestor)).json() == []
+
+
+def test_reindex_all_replaces_chunks_with_current_embedder(client, db, gestor, groups):
+    from app.services.ingestion.indexer import reindex_all
+    from tests.fakes import FakeEmbedder
+
+    class OtherModel(FakeEmbedder):
+        model = "other-embed"
+
+    doc = make(client, gestor, groups)
+    make(client, gestor, groups, status="draft")  # drafts stay out of the index
+    assert {c.embedding_model for c in active(db, doc["id"])} == {"fake-embed"}
+    assert reindex_all(db, OtherModel()) == 2
+    assert {c.embedding_model for c in active(db, doc["id"])} == {"other-embed"}
+    assert db.scalars(select(Chunk).where(Chunk.embedding_model == "fake-embed", Chunk.active.is_(True))).first() is None

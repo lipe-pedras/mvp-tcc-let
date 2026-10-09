@@ -47,6 +47,17 @@ def index_document(db: Session, doc: Document, embedder: EmbeddingProvider) -> i
     return len(chunks)
 
 
+def reindex_all(db: Session, embedder: EmbeddingProvider) -> int:
+    """Rebuild every document's chunks with the current embedder. Needed after changing the embedding model."""
+    from sqlalchemy import select
+
+    total = 0
+    for doc in db.scalars(select(Document).order_by(Document.id)):
+        total += index_document(db, doc, embedder)
+        db.commit()
+    return total
+
+
 def sync_chunk_groups(db: Session, doc: Document) -> None:
     """Keep the access groups on active chunks equal to the document's."""
     db.execute(
